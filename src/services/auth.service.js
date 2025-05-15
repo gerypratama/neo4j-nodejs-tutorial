@@ -48,10 +48,26 @@ export default class AuthService {
       })
     }
     // end::constraintError[]
+    const session = this.driver.session()
+    const res = await session.executeWrite(tx => tx.run(
+      `
+        CREATE (u: User {
+          userId: apoc.create.uuid(),
+          email: $email,
+          password: $encrypted,
+          name: $name
+        })
+        RETURN u
+      `,
+      { email, encrypted, name }
+    ))
 
     // TODO: Save user
+    const [first] = res.records
+    const node = first.get('u')
+    const { password, ...safeProperties } = node.properties
 
-    const { password, ...safeProperties } = user
+    await session.close()
 
     return {
       ...safeProperties,
