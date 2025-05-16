@@ -43,20 +43,23 @@ export default class MovieService {
     // TODO: Open an Session
     const session = this.driver.session()
     // TODO: Execute a query in a new Read Transaction
-    const res = await session.executeRead(tx =>
-      tx.run(
+    const res = await session.executeRead(async tx => {
+      const favorites = await this.getUserFavorites(tx, userId)
+
+      return tx.run(
         `
           MATCH (m:Movie)
           WHERE m.\`${sort}\` IS NOT NULL
           RETURN m {
-            .*
+            .*,
+            favorite: m.tmdbId IN $favorites
           } AS movie
           ORDER BY m.\`${sort}\` ${order}
           SKIP $skip
           LIMIT $limit
-        `, { skip: int(skip), limit: int(limit) }
+        `, { skip: int(skip), limit: int(limit), favorites }
       )
-    )
+    })
     // TODO: Get a list of Movies from the Result
     const movies = res.records.map(row => toNativeTypes(row.get('movie')))
     // TODO: Close the session
@@ -220,7 +223,16 @@ export default class MovieService {
    */
   // tag::getUserFavorites[]
   async getUserFavorites(tx, userId) {
-    return []
+    if (!userId) return []
+
+    const favResult = await tx.run(
+      `
+        MATCH (u:User {userId: $userId})-[:HAS_FAVORITE]->(m:Movie)
+        RETURN m.tmdbId AS tmdbId
+      `, { userId }
+    )
+
+    return favResult.records.map(row => row.get('tmdbId'))
   }
   // end::getUserFavorites[]
 
