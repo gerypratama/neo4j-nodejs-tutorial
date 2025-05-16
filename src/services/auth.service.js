@@ -39,18 +39,10 @@ export default class AuthService {
   // tag::register[]
   async register(email, plainPassword, name) {
     const encrypted = await hash(plainPassword, parseInt(SALT_ROUNDS))
-
-    // tag::constraintError[]
-    // TODO: Handle Unique constraints in the database
-    if (email !== 'graphacademy@neo4j.com') {
-      throw new ValidationError(`An account already exists with the email address ${email}`, {
-        email: 'Email address taken'
-      })
-    }
-    // end::constraintError[]
     const session = this.driver.session()
-    const res = await session.executeWrite(tx => tx.run(
-      `
+    try {
+      const res = await session.executeWrite(tx => tx.run(
+        `
         CREATE (u: User {
           userId: apoc.create.uuid(),
           email: $email,
@@ -59,20 +51,36 @@ export default class AuthService {
         })
         RETURN u
       `,
-      { email, encrypted, name }
-    ))
+        { email, encrypted, name }
+      ))
 
-    // TODO: Save user
-    const [first] = res.records
-    const node = first.get('u')
-    const { password, ...safeProperties } = node.properties
+      // TODO: Save user
+      const [first] = res.records
+      const node = first.get('u')
+      const { password, ...safeProperties } = node.properties
 
-    await session.close()
+      await session.close()
 
-    return {
-      ...safeProperties,
-      token: jwt.sign(this.userToClaims(safeProperties), JWT_SECRET),
+      return {
+        ...safeProperties,
+        token: jwt.sign(this.userToClaims(safeProperties), JWT_SECRET),
+      }
+    } catch (e) {
+      // tag::constraintError[]
+      // TODO: Handle Unique constraints in the database
+      if (e === 'Neo.ClientError.Schema.ConstraintValidationFailed') {
+        throw new ValidationError(`An account already exists with the email address ${email}`, {
+          email: 'Email address already taken'
+        })
+      }
+
+      throw e
+      // end::constraintError[]
+    } finally {
+      await session.close()
     }
+
+
   }
   // end::register[]
 
